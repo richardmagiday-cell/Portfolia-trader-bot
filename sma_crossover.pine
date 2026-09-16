@@ -14,8 +14,8 @@ fill(fastPlot, slowPlot, color=fastSMA > slowSMA ? color.new(color.green, 90) : 
 bullishCross = ta.crossover(fastSMA, slowSMA)
 bearishCross = ta.crossunder(fastSMA, slowSMA)
 
-plotshape(bullishCross, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY")
-plotshape(bearishCross, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL")
+plotshape(bullishCross, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY", textcolor=color.white)
+plotshape(bearishCross, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL", textcolor=color.white)
 
 alertcondition(bullishCross, title="Bullish Crossover", message="Fast SMA crossed above Slow SMA")
 alertcondition(bearishCross, title="Bearish Crossover", message="Fast SMA crossed below Slow SMA")

@@ -1,0 +1,33 @@
+//@version=5
+indicator("EMA/VWAP Scalper (1min)", overlay=true)
+
+fastLength = input.int(9, title="Fast EMA Length", minval=1)
+slowLength = input.int(21, title="Slow EMA Length", minval=1)
+atrLength = input.int(14, title="ATR Length", minval=1)
+atrAvgLength = input.int(14, title="ATR Average Length", minval=1)
+atrMultiplier = input.float(1.0, title="Min ATR Multiplier (higher = fewer, stronger signals)", minval=0.1, step=0.1)
+
+fastEMA = ta.ema(close, fastLength)
+slowEMA = ta.ema(close, slowLength)
+vwapValue = ta.vwap(hlc3)
+
+atrValue = ta.atr(atrLength)
+avgAtr = ta.sma(atrValue, atrAvgLength)
+volatilityOk = atrValue > avgAtr * atrMultiplier
+
+fastPlot = plot(fastEMA, title="Fast EMA", color=color.new(color.aqua, 0), linewidth=2)
+slowPlot = plot(slowEMA, title="Slow EMA", color=color.new(color.orange, 0), linewidth=2)
+fill(fastPlot, slowPlot, color=fastEMA > slowEMA ? color.new(color.green, 90) : color.new(color.red, 90))
+plot(vwapValue, title="VWAP", color=color.new(color.purple, 0), linewidth=2)
+
+bullishCross = ta.crossover(fastEMA, slowEMA)
+bearishCross = ta.crossunder(fastEMA, slowEMA)
+
+buySignal = bullishCross and close > vwapValue and volatilityOk
+sellSignal = bearishCross and close < vwapValue and volatilityOk
+
+plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY", textcolor=color.white)
+plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL", textcolor=color.white)
+
+alertcondition(buySignal, title="Buy Signal", message="EMA crossed above with price above VWAP and sufficient volatility")
+alertcondition(sellSignal, title="Sell Signal", message="EMA crossed below with price below VWAP and sufficient volatility")
