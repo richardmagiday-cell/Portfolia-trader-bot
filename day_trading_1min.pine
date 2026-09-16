@@ -1,79 +1,108 @@
 //@version=5
-indicator("1-Min Day Trading System", overlay=true, max_labels_count=500)
+indicator("VWAP Bounce + HTF Trend (1min)", overlay=true, max_labels_count=500)
 
-// === Trend ===
-fastLength = input.int(9, title="Fast EMA Length", group="Trend")
-slowLength = input.int(21, title="Slow EMA Length", group="Trend")
-fastEMA = ta.ema(close, fastLength)
-slowEMA = ta.ema(close, slowLength)
+// === Higher-Timeframe Bias: only trade in the direction of the 1H 100 EMA ===
+htfTimeframe = input.timeframe("60", title="HTF Timeframe", group="HTF Bias")
+htfEmaLength = input.int(100, title="HTF EMA Length", group="HTF Bias")
+htfEMA = request.security(syminfo.tickerid, htfTimeframe, ta.ema(close, htfEmaLength), lookahead=barmerge.lookahead_off)
+htfBiasLong = close > htfEMA
+htfBiasShort = close < htfEMA
+plot(htfEMA, title="HTF EMA", color=color.new(color.yellow, 0), linewidth=2)
+
+// === VWAP ===
 vwapValue = ta.vwap(hlc3)
-
-// === Momentum ===
-rsiLength = input.int(14, title="RSI Length", group="Momentum")
-rsiLongMin = input.int(50, title="Min RSI for Longs", group="Momentum")
-rsiShortMax = input.int(50, title="Max RSI for Shorts", group="Momentum")
-rsiOverbought = input.int(80, title="Skip Longs Above (too extended)", group="Momentum")
-rsiOversold = input.int(20, title="Skip Shorts Below (too extended)", group="Momentum")
-rsiValue = ta.rsi(close, rsiLength)
-
-// === Volume ===
-volLength = input.int(20, title="Volume Avg Length", group="Volume")
-volMultiplier = input.float(1.2, title="Min Volume Multiplier", minval=0.1, step=0.1, group="Volume")
-volumeOk = volume > ta.sma(volume, volLength) * volMultiplier
-
-// === Volatility ===
-atrLength = input.int(14, title="ATR Length", group="Volatility")
-atrMultiplier = input.float(1.0, title="Min ATR Multiplier", minval=0.1, step=0.1, group="Volatility")
-atrValue = ta.atr(atrLength)
-volatilityOk = atrValue > ta.sma(atrValue, atrLength) * atrMultiplier
-
-// === Session Filter ===
-useSessionFilter = input.bool(true, title="Only trade during regular session", group="Session")
-sessionInput = input.session("0930-1600", title="Session (exchange time)", group="Session")
-inSession = not useSessionFilter or not na(time(timeframe.period, sessionInput))
-
-// === Risk Management ===
-slAtrMult = input.float(1.5, title="Stop Loss (x ATR)", minval=0.1, step=0.1, group="Risk")
-tpAtrMult = input.float(2.5, title="Take Profit (x ATR)", minval=0.1, step=0.1, group="Risk")
-
-// === Signal Logic ===
-bullishCross = ta.crossover(fastEMA, slowEMA)
-bearishCross = ta.crossunder(fastEMA, slowEMA)
-
-trendUpAligned = close > vwapValue and fastEMA > slowEMA
-trendDownAligned = close < vwapValue and fastEMA < slowEMA
-
-momentumLongOk = rsiValue > rsiLongMin and rsiValue < rsiOverbought
-momentumShortOk = rsiValue < rsiShortMax and rsiValue > rsiOversold
-
-buySignal = bullishCross and trendUpAligned and momentumLongOk and volumeOk and volatilityOk and inSession
-sellSignal = bearishCross and trendDownAligned and momentumShortOk and volumeOk and volatilityOk and inSession
-
-// === Plots ===
-fastPlot = plot(fastEMA, title="Fast EMA", color=color.new(color.aqua, 0), linewidth=2)
-slowPlot = plot(slowEMA, title="Slow EMA", color=color.new(color.orange, 0), linewidth=2)
-fill(fastPlot, slowPlot, color=fastEMA > slowEMA ? color.new(color.green, 90) : color.new(color.red, 90))
 plot(vwapValue, title="VWAP", color=color.new(color.purple, 0), linewidth=2)
+
+// === VWAP Rejection (bounce) — not the first touch, wait for a rejection wick + volume, then confirmation ===
+wickRatio = input.float(2.0, title="Min Wick-to-Body Ratio", group="VWAP Bounce")
+volMult = input.float(1.5, title="Min Volume Multiplier on Rejection Bar", group="VWAP Bounce")
+volAvgLength = input.int(20, title="Volume Average Length", group="VWAP Bounce")
+avgVol = ta.sma(volume, volAvgLength)
+
+lowerWick = math.min(open, close) - low
+upperWick = high - math.max(open, close)
+bodySize = math.max(math.abs(close - open), syminfo.mintick)
+
+bullishRejection = low <= vwapValue and close > vwapValue and lowerWick > bodySize * wickRatio and volume > avgVol * volMult
+bearishRejection = high >= vwapValue and close < vwapValue and upperWick > bodySize * wickRatio and volume > avgVol * volMult
+
+var float rejLow = na
+var float rejHigh = na
+var bool awaitingBullConfirm = false
+var bool awaitingBearConfirm = false
+
+if bullishRejection
+    rejLow := low
+    rejHigh := high
+    awaitingBullConfirm := true
+    awaitingBearConfirm := false
+
+if bearishRejection
+    rejLow := low
+    rejHigh := high
+    awaitingBearConfirm := true
+    awaitingBullConfirm := false
+
+// confirmation bar: breaks back through the rejection extreme without the wick's low/high being taken out first (no follow-through against the bounce)
+bullConfirm = awaitingBullConfirm and close > rejHigh and low >= rejLow
+bearConfirm = awaitingBearConfirm and close < rejLow and high <= rejHigh
+
+if bullConfirm
+    awaitingBullConfirm := false
+if bearConfirm
+    awaitingBearConfirm := false
+
+plotshape(bullishRejection, title="VWAP Bullish Rejection", style=shape.circle, location=location.belowbar, color=color.new(color.green, 40), size=size.tiny)
+plotshape(bearishRejection, title="VWAP Bearish Rejection", style=shape.circle, location=location.abovebar, color=color.new(color.red, 40), size=size.tiny)
+
+// === First-Hour Trend Lock: whatever the stock does in the opening window, stick with it ===
+sessionInput = input.session("0930-1600", title="Regular Session", group="Opening Range")
+firstHourMinutes = input.int(60, title="Trend-Lock Window (minutes)", minval=1, group="Opening Range")
+
+t = time(timeframe.period, sessionInput)
+newSessionBar = not na(t) and na(t[1])
+
+var float sessionOpenTime = na
+var float orOpenPrice = na
+var int dayTrend = 0
+var bool orLocked = false
+
+if newSessionBar
+    sessionOpenTime := time
+    orOpenPrice := open
+    dayTrend := 0
+    orLocked := false
+
+elapsedMin = na(sessionOpenTime) ? na : (time - sessionOpenTime) / 60000
+
+if not orLocked and not na(elapsedMin) and elapsedMin >= firstHourMinutes
+    dayTrend := close > orOpenPrice ? 1 : -1
+    orLocked := true
+
+bgcolor(orLocked and dayTrend == 1 ? color.new(color.green, 92) : orLocked and dayTrend == -1 ? color.new(color.red, 92) : na, title="Locked Day Trend")
+
+// === Risk sizing (ATR-based SL/TP suggestion) ===
+atrLength = input.int(14, title="ATR Length (for SL/TP sizing)", group="Risk")
+slAtrMult = input.float(1.0, title="Stop Loss (x ATR)", minval=0.1, step=0.1, group="Risk")
+tpAtrMult = input.float(2.0, title="Take Profit (x ATR)", minval=0.1, step=0.1, group="Risk")
+atrValue = ta.atr(atrLength)
+
+// === Final Signal: HTF trend + first-hour trend lock + VWAP rejection bounce all agree ===
+buySignal = bullConfirm and htfBiasLong and orLocked and dayTrend == 1
+sellSignal = bearConfirm and htfBiasShort and orLocked and dayTrend == -1
 
 plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY", textcolor=color.white)
 plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL", textcolor=color.white)
 
-// === Risk Labels (suggested stop/target based on ATR at signal time) ===
 if buySignal
-    entryPrice = close
-    stopPrice = entryPrice - atrValue * slAtrMult
-    targetPrice = entryPrice + atrValue * tpAtrMult
+    stopPrice = close - atrValue * slAtrMult
+    targetPrice = close + atrValue * tpAtrMult
     label.new(bar_index, low, text="SL " + str.tostring(stopPrice, format.mintick) + "\nTP " + str.tostring(targetPrice, format.mintick), style=label.style_label_up, color=color.new(color.green, 70), textcolor=color.white, size=size.tiny)
 
 if sellSignal
-    entryPrice = close
-    stopPrice = entryPrice + atrValue * slAtrMult
-    targetPrice = entryPrice - atrValue * tpAtrMult
+    stopPrice = close + atrValue * slAtrMult
+    targetPrice = close - atrValue * tpAtrMult
     label.new(bar_index, high, text="SL " + str.tostring(stopPrice, format.mintick) + "\nTP " + str.tostring(targetPrice, format.mintick), style=label.style_label_down, color=color.new(color.red, 70), textcolor=color.white, size=size.tiny)
 
-// === Session shading ===
-bgcolor(useSessionFilter and not inSession ? color.new(color.gray, 90) : na, title="Outside Session")
-
-// === Alerts ===
-alertcondition(buySignal, title="Buy Signal", message="1-min system BUY: trend+momentum+volume+volatility aligned")
-alertcondition(sellSignal, title="Sell Signal", message="1-min system SELL: trend+momentum+volume+volatility aligned")
+alertcondition(buySignal, title="Buy Signal", message="HTF trend + first-hour lock + VWAP rejection bounce confirmed BUY")
+alertcondition(sellSignal, title="Sell Signal", message="HTF trend + first-hour lock + VWAP rejection bounce confirmed SELL")
