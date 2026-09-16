@@ -6,6 +6,9 @@ slowLength = input.int(21, title="Slow EMA Length", minval=1)
 atrLength = input.int(14, title="ATR Length", minval=1)
 atrAvgLength = input.int(14, title="ATR Average Length", minval=1)
 atrMultiplier = input.float(1.0, title="Min ATR Multiplier (higher = fewer, stronger signals)", minval=0.1, step=0.1)
+useVwapFilter = input.bool(true, title="Require price above/below VWAP")
+useVolatilityFilter = input.bool(true, title="Require above-average volatility")
+showRawCrosses = input.bool(true, title="Show unfiltered EMA crosses (faint)")
 
 fastEMA = ta.ema(close, fastLength)
 slowEMA = ta.ema(close, slowLength)
@@ -23,8 +26,11 @@ plot(vwapValue, title="VWAP", color=color.new(color.purple, 0), linewidth=2)
 bullishCross = ta.crossover(fastEMA, slowEMA)
 bearishCross = ta.crossunder(fastEMA, slowEMA)
 
-buySignal = bullishCross and close > vwapValue and volatilityOk
-sellSignal = bearishCross and close < vwapValue and volatilityOk
+buySignal = bullishCross and (not useVwapFilter or close > vwapValue) and (not useVolatilityFilter or volatilityOk)
+sellSignal = bearishCross and (not useVwapFilter or close < vwapValue) and (not useVolatilityFilter or volatilityOk)
+
+plotshape(showRawCrosses and bullishCross and not buySignal, title="Raw Bullish Cross (filtered out)", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 70), size=size.tiny)
+plotshape(showRawCrosses and bearishCross and not sellSignal, title="Raw Bearish Cross (filtered out)", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 70), size=size.tiny)
 
 plotshape(buySignal, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY", textcolor=color.white)
 plotshape(sellSignal, title="Sell Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL", textcolor=color.white)
