@@ -1,0 +1,21 @@
+//@version=5
+indicator("Simple VWAP Trend", overlay=true)
+
+emaLength = input.int(50, title="Trend EMA Length")
+trendEMA = ta.ema(close, emaLength)
+vwapValue = ta.vwap(hlc3)
+
+plot(trendEMA, title="Trend EMA", color=color.new(color.yellow, 0), linewidth=2)
+plot(vwapValue, title="VWAP", color=color.new(color.purple, 0), linewidth=2)
+
+uptrend = close > trendEMA
+downtrend = close < trendEMA
+
+buySignal = ta.crossover(close, vwapValue) and uptrend
+sellSignal = ta.crossunder(close, vwapValue) and downtrend
+
+plotshape(buySignal, title="Buy", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY", textcolor=color.white)
+plotshape(sellSignal, title="Sell", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, text="SELL", textcolor=color.white)
+
+alertcondition(buySignal, title="Buy Signal", message="Price crossed above VWAP in an uptrend")
+alertcondition(sellSignal, title="Sell Signal", message="Price crossed below VWAP in a downtrend")
